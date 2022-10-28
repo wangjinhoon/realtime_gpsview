@@ -8,7 +8,10 @@ matplotlib.use('TkAgg')
 import numpy as np
 import matplotlib.animation
 import time
+from threading import Thread
 import threading
+# from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.cm as cm
 # gps_latitude = 0
 # gps_longitude = 0
 # rtk_latitude = 0
@@ -20,6 +23,20 @@ import threading
 # sc = ax.scatter(x,y)
 # plt.xlim(points[0],points[2])
 # plt.ylim(points[1],points[3])
+points = []
+flag = False
+class StoppableThread(Thread):
+    """Thread class with a stop() method. The thread itself has to check
+    regularly for the stopped() condition."""
+
+    def __init__(self,  *args, **kwargs):
+        super(StoppableThread, self).__init__(*args, **kwargs)
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+    def stopped(self):
+        return self._stop_event.is_set()
 
 def GpsPositionSubCallback(data):
     global gps_latitude
@@ -27,6 +44,7 @@ def GpsPositionSubCallback(data):
     #print(" Gps 위도 : ", data.latitude, " Gps 경도 : ", data.longitude  )
     gps_latitude =  data.latitude
     gps_longitude = data.longitude
+    flag = False
     # return gps_longitude, gps_latitude
 
 def RtkPositionSubCallback(data):
@@ -74,21 +92,23 @@ def listener():
     img_points_x = []
     img_points_y = []
     img_points = []
-    rospy.sleep(2)
+    rospy.sleep(0.5)
     max_lat =  0
     max_lon = 0
     min_lat = 100
     min_lon = 200 
     count = 0
-    t = threading.Thread(target=function)
+    t = StoppableThread(target=function)
     t.start()
     while True:
         if rtk_latitude == 0 and rtk_longitude == 0:
             offset_latitude = gps_latitude
             offset_longitude = gps_longitude
+            offset_signal = "gps"
         else:
             offset_latitude = rtk_latitude
             offset_longitude = rtk_longitude
+            offset_signal = "rtk"
         
         if max_lat < offset_latitude:
             max_lat = offset_latitude + 0.00005
@@ -110,7 +130,7 @@ def listener():
         before_offset_latitude = offset_latitude
         before_offset_longitude = offset_longitude
         # print("out",offset_latitude, offset_longitude)
-        d = [offset_latitude, offset_longitude]
+        d = [offset_latitude, offset_longitude , offset_signal]
         points = [min_lat, min_lon, max_lat, max_lon]
         # print("최소 위도 : ",min_lat, "최소 경도 : ",min_lon, "최대 위도 : ",max_lat, "최대 경도 : ",max_lon)
         # print(d)
@@ -119,15 +139,13 @@ def listener():
         # print("main : ", d)
         # result_image = Image.open('map.png', 'r')
         # x1, y1 = scale_to_img(d, (1080, 1080), points)
-
         # img_points_x.append(x1)
         # img_points_y.append(y1)
         # img_points.append(x1,y1)
         # plt.xlim([min_lat, max_lat])      # X축의 범위: [xmin, xmax]
         # plt.ylim([min_lon, max_lon])     # Y축의 범위: [ymin, ymax]
 
-        time.sleep(0.01)
-        
+        time.sleep(0.01)    
     rospy.spin()
 
 
@@ -136,10 +154,19 @@ def function():
     global x1, y1
     global d
     global points
+    global intensity
     d = [0, 0]
     fig, ax = plt.subplots()
     x,y = [], []
-    sc = ax.scatter(x,y)
+    intensity = []
+    iterations = 100
+    t_vals = np.linspace(0,1, iterations)
+    colors = [[0,0,1,0],[0,0,1,0.5],[0,0.2,0.4,1]]
+    if d[2] == "rtk":
+        cmap = cm.get_cmap('Blues')
+    else:
+        cmap = cm.get_cmap('Reds')
+    sc = ax.scatter(x,y,c=[],cmap=cmap, vmin=0,vmax=1)# c=np.tile(z, (100, 1))
     plt.title('grid length : 1m')
     plt.xlabel('longitude')
     plt.ylabel('latitude')
@@ -149,24 +176,29 @@ def function():
     plt.yticks([])
     plt.xticks(np.arange(points[1], points[3], 0.00001),color='w'    )    
     plt.yticks(np.arange(points[0], points[2], 0.00001),color='w'    ) # ,color='w'    
-    plt.grid(True)                            
+    plt.grid(True)                       
     def animate(i):
+        global intensity
         # x.append(x1)
         # y.append(y1)
         # print("thread : ", d)
         x.append(d[1])
         y.append(d[0])
-        ax.set_xlim(points[1],points[3])
+        ax.set_xlim(points[1],points[3])#축
         ax.set_ylim(points[0],points[2])
-        ax.set_xticks(np.arange(points[1], points[3], 0.00001)) #1m
+        ax.set_xticks(np.arange(points[1], points[3], 0.00001)) #1m 좌표
         ax.set_yticks(np.arange(points[0], points[2], 0.00001))    
         sc.set_offsets(np.c_[x,y])
-
+        
+        #calculate new color values
+        intensity = np.concatenate((np.array(intensity)*0.998, np.ones(1)))
+        sc.set_array(intensity)
+    
     ani = matplotlib.animation.FuncAnimation(fig, animate, 
-                    frames=10, interval=100, repeat=True) 
+                    frames=t_vals, interval=50) 
                     
     plt.show()
 
 if __name__ == '__main__':
     listener()
-        
+    
