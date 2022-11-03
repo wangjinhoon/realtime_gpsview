@@ -28,6 +28,4 @@ gps, rtk rosbag 파일을 실행하게 되면 시각적으로 실시간 확인�
 
 ---
 
-### 실행 오류 : attributeerror 'list' 개체에 'ndim' 속성이 없습니다.
-
-핑3.9버전이상을사용해야한다.
+### 실행 오류 : attributeerror 'list' 개체에 'ndim' 속성이 없습니다.  
